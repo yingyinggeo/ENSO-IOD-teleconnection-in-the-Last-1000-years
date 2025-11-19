@@ -1,22 +1,21 @@
-%% MME的Granger
- load Revise_Granger_NINOIOD_10yr_1870-2005_LME.mat;
- LME = F21;  clear F21;
-
- load Revise_Granger_NINOIOD_10yr_obs_1870_2005.mat;
- Obs = F21; clear F21;
-%
 %%
 load('/Users/yingyingfeng/Downloads/Data/Paleo3bs_Project/sst_idx_850-2005_ILME_FULL_15ens.mat')
 sst_idx_real = sst_idx;
 sst_idx_real(:,1:5,:) = sst_idx_real(:,1:5,:) - 273.15; 
 sst_idx_real(:,7:11,:) = sst_idx_real(:,7:11,:) - 273.15; 
 
- data_series = nan(size(IOD_series,1),8,15);
+ data_series = nan(1156,8,15);
 for irun = 1:size(sst_idx_real,3)
     sst_idx_run = sst_idx_real(:,:,irun);
     %Nino
     Nino_mon_re = reshape(sst_idx_run(:,1),12,size(sst_idx_run,1)./12);
-    Nino_series = squeeze(nanmean([Nino_mon_re(12,1:end-1);Nino_mon_re(1:2,2:end)],1))';
+    Nino_cli = nanmean(Nino_mon_re(:,1021:1156),2);
+    Nino_cli_rep = repmat(Nino_cli,1,1156);
+    Nino_ano = Nino_mon_re - Nino_cli_rep;
+    Nino_raw = reshape(Nino_ano,12*1156,1);
+    Nino_raw_mov = movmean(Nino_raw,5);
+    Nino_mov_re = reshape(Nino_raw_mov,12,1156);
+    Nino_series = squeeze(nanmean([Nino_mov_re(12,1:end-1);Nino_mov_re(1:2,2:end)],1))';
 
     %ATL3
     ATL3_mon_re = reshape(sst_idx_run(:,9),12,size(sst_idx_run,1)./12);
@@ -55,9 +54,7 @@ for irun = 1:size(sst_idx_real,3)
     data_series(:,7,irun) = WTIO_series;
     data_series(:,8,irun) = ETIO_series;
 end
-
-%save avg_std_full.mat data_avg_ens data_std_ens;
-
+clearvars -except data_series;
 
 %%
 load  /Users/yingyingfeng/Downloads/Data/Paleo3bs_Project/sst_idx_1870-2005_Hadisst_UCSB_region.mat sst_idx_obs;
@@ -67,7 +64,14 @@ sst_idx_real = sst_idx;
 sst_idx_run = sst_idx;
 %Nino
 Nino_mon_re = reshape(sst_idx_run(:,1),12,size(sst_idx_run,1)./12);
-Nino_series = squeeze(nanmean([Nino_mon_re(12,1:end-1);Nino_mon_re(1:2,2:end)],1))';
+Nino_cli = nanmean(Nino_mon_re,2);
+Nino_cli_rep = repmat(Nino_cli,1,136);
+Nino_cli_ano = Nino_mon_re - Nino_cli_rep;
+Nino_series_raw = reshape(Nino_cli_ano,12*136,1);
+Nino_mov = movmean(Nino_series_raw,5);
+Nino_ano_fn = reshape(Nino_mov,12,136);
+Nino_series = squeeze(nanmean([Nino_ano_fn(12,1:end-1);Nino_ano_fn(1:2,2:end)],1))';
+
 %TNA
 TNA_mon_re = reshape(sst_idx_run(:,2),12,size(sst_idx_run,1)./12);
 TNA_series = nanmean(TNA_mon_re(3:5,:),1)';
@@ -91,6 +95,15 @@ IOD_series = WTIO_series - ETIO_series;
 yr_inum = 1:1126;
 color_line =  [[0 73 195]./255;  [0 116 195]./255; [100 30 181]./255;  [103, 116, 176]./255;   [0.4 0.4 0.4]];
 color_patch = [[0 73 195]./255;  [0 116 195]./255; [100 30 181]./255;  [103, 116, 176]./255;   [0.3 0.3 0.3]];
+
+clearvars -except data_series IOD_series Nino_series;
+
+%% MME的Granger
+ load Revise_Granger_NINOIOD_30yr_1870-2005_LME.mat;
+ LME = F21;  clear F21;
+
+ load Revise_Granger_NINOIOD_30yr_obs_1870_2005.mat;
+ Obs = F21; clear F21;
 %%
  page_width = 25; page_height = 25;
  figure('Units','centimeters',...
@@ -141,73 +154,71 @@ for inum = 1:3
     hold on;
     clear tmp;
     clear tmp_obs;
+
     if inum==1
-        set(ax, 'YLim',[-0.8 0.8],'YTick',-0.4:0.4:0.4, 'TickDir','out','TickLength',[0.01/0.5, 0]);
+        set(ax, 'YLim',[-2 3],'YTick',-1:1:2, 'TickDir','out','TickLength',[0.01/0.5, 0]);
 
-        tmp = movmean(squeeze(data_series(:,1,:)),5);
-        tmp_obs =  [];
-        tmp_obs =  movmean(Nino_series,8);
-        tmp(tmp==0) = nan;
-        tmp_obs(tmp_obs==0) = nan;
-
-        data_series_avg = nanmean(tmp,2)-nanmean(tmp,'all');
-        data_series_avg_obs = nanmean(tmp_obs,2)-nanmean(tmp_obs,'all');
-        avg_std = std(tmp,0,2);
-        avg_std_obs = std(tmp_obs,0,2);
-
-        tmp_obs = data_series_avg_obs(1:end,:); %1960-1999
-        % tmp_lme =data_series_avg(6:1150,1);
-        % adjust_value = tmp_obs./std(tmp_obs).*std(tmp_lme)-nanmean(tmp_obs./std(tmp_obs).*std(tmp_lme))+nanmean(tmp_lme);
-        obs_color = [[209,0,42]./255; [240,121,122]./255;[216 110 19]./255;[166 107 29]./255];
-
-        plot(ax,1871:2005, tmp_obs, '-', 'Color', [210 210 210]./255, 'LineWidth', 2, 'LineJoin' ,'miter');
+        tmp =   squeeze(data_series(1021:1155,1,:));
         hold on;
-        % fh = fill([850+6:850+1150, fliplr(850+6:850+1150)], [(data_series_avg(6:1150,1)+avg_std(6:1150,1))', fliplr((data_series_avg(6:1150,1)-avg_std(6:1150,1))')], color_patch(inum,:));
-                fh = fill([850+6:850+1150, fliplr(850+6:850+1150)], [(data_series_avg(6:1150,1)+avg_std(6:1150,1))', fliplr((data_series_avg(6:1150,1)-avg_std(6:1150,1))')], color_patch(inum,:));
+        years = (1871:2005)';   % 135×1
 
-        set(fh,'FaceColor', color_patch(1,:),'FaceAlpha',0.25,'EdgeColor','none','EdgeAlpha',0.4,'Linestyle','--');
-        plot(ax,850+6:850+1150, data_series_avg(6:1150,1), '-', 'LineWidth', 2, 'Color', color_line(1,:),  'LineJoin' ,'miter'); %855-1999
+        % 计算每一年 15 个 ensemble 的统计量
+        ens_mean = mean(tmp, 2);        % 135×1，逐年平均
+        ens_min  = ens_mean -std(tmp, [], 2);     % 135×1，逐年最小
+        ens_max  = ens_mean + std(tmp, [], 2);     % 135×1，逐年最大
+        X = [years; flipud(years)];         % 先上边，再倒序回来
+        Y = [ens_min; flipud(ens_max)];     % 下边是min，上边是max
+
+        % 画灰色阴影
+        fh = fill(ax,X, Y,  color_patch(inum,:),'FaceAlpha',0.25,'EdgeColor','none','EdgeAlpha',0.4,'Linestyle','--');            % 半透明，让中间的线看得清
+
+        % fh = fill([850+6:850+1150, fliplr(850+6:850+1150)], [(data_series_avg(6:1150,1)+avg_std(6:1150,1))', fliplr((data_series_avg(6:1150,1)-avg_std(6:1150,1))')], color_patch(inum,:));
+        % fh = fill([1871:2005, fliplr(1871:2005)], [(max(tmp,0,2))', fliplr(min(tmp,0,2)')], color_patch(inum,:));
+        plot(ax,1871:2005, nanmean(tmp,2) , '-', 'LineWidth', 1.5, 'Color', color_line(1,:),  'LineJoin' ,'miter'); %855-1999
+        hold on;
+        plot(ax,1871:2005, Nino_series, '-', 'Color', [210 210 210]./255, 'LineWidth', 1.5, 'LineJoin' ,'miter');
+
     end
 
         if inum==2
-            set(ax, 'YLim',[-0.8 0.8],'YTick',-0.4:0.4:0.4, 'TickDir','out','TickLength',[0.01/0.5, 0]);
-
-            tmp = movmean(squeeze(data_series(:,6,:)),5);
+            set(ax, 'YLim',[-3 3],'YTick',-2:1:2, 'TickDir','out','TickLength',[0.01/0.5, 0]);
+            tmp =squeeze(data_series(1021:1156,6,:));
             tmp_obs =  [];
-            tmp_obs = movmean(IOD_series,5);
+            tmp_obs = IOD_series;
             tmp(tmp==0) = nan;
             tmp_obs(tmp_obs==0) = nan;
 
-            data_series_avg = nanmean(tmp,2)-nanmean(tmp,'all');
-            data_series_avg_obs = nanmean(tmp_obs,2)-nanmean(tmp_obs,'all');
+            tmp_ano = tmp - repmat(nanmean(tmp,1),136,1);
+            tmp_ano_obs = tmp_obs - nanmean(tmp_obs);
             avg_std = std(tmp,0,2);
             avg_std_obs = std(tmp_obs,0,2);
 
-            tmp_obs = data_series_avg_obs(1:end,:); %1960-1999
-            % tmp_lme =data_series_avg(6:1150,1);
-            % adjust_value = tmp_obs./std(tmp_obs).*std(tmp_lme)-nanmean(tmp_obs./std(tmp_obs).*std(tmp_lme))+nanmean(tmp_lme);
-            obs_color = [[209,0,42]./255; [240,121,122]./255;[216 110 19]./255;[166 107 29]./255];
-
-            plot(ax,1870:2005, tmp_obs, '-', 'Color', [210 210 210]./255, 'LineWidth', 2, 'LineJoin' ,'miter');
+            years = (1870:2005)';   % 135×1
+            ens_mean = mean(tmp_ano, 2);        % 135×1，逐年平均
+            ens_min  =ens_mean - std(tmp_ano, [], 2);     % 135×1，逐年最小
+            ens_max  = ens_mean + std(tmp_ano, [], 2);     % 135×1，逐年最大
+            X = [years; flipud(years)];         % 先上边，再倒序回来
+            Y = [ens_min; flipud(ens_max)];     % 下边是min，上边是max
             hold on;
-
-            fh = fill([850+6:850+1150, fliplr(850+6:850+1150)], [(data_series_avg(6:1150,1)+avg_std(6:1150,1))', fliplr((data_series_avg(6:1150,1)-avg_std(6:1150,1))')], color_patch(inum,:));
+            fh = fill(ax,X, Y,  color_patch(inum,:),'FaceAlpha',0.25,'EdgeColor','none','EdgeAlpha',0.25,'Linestyle','--');            % 半透明，让中间的线看得清
             set(fh,'FaceColor', color_patch(1,:),'FaceAlpha',0.25,'EdgeColor','none','EdgeAlpha',0.4,'Linestyle','--');
-            plot(ax,850+6:850+1150, data_series_avg(6:1150,1), '-', 'LineWidth', 2, 'Color', color_line(1,:),  'LineJoin' ,'miter'); %855-1999
-
+            hold on;
+            plot(ax,1870:2005, nanmean(tmp_ano,2), '-', 'LineWidth', 1.5, 'Color', color_line(1,:),  'LineJoin' ,'miter'); %855-1999
+            hold on;
+            plot(ax,1870:2005, tmp_ano_obs, '-', 'Color', [210 210 210]./255, 'LineWidth', 1.5, 'LineJoin' ,'miter');      
         end
 
 
     if inum==3
-               set(ax, 'YLim',[-0.075 0.075],'YTick',-0.05:0.05:0.05, 'TickDir','out','TickLength',[0.01/0.5, 0]);
+     set(ax, 'YLim',[-0.04 0.05],'YTick',-0.02:0.02:0.04, 'TickDir','out','TickLength',[0.01/0.5, 0]);
 
-    LME_ano = LME - nanmean(LME(:));
     %
+    LME_ano = LME-nanmean(LME(:));
     fh = fill([1870+15:2005-15, fliplr(1870+15:2005-15)], [(nanmean(LME_ano(16:121,:),2)+nanstd(LME_ano(16:121,:),0,2))', fliplr((nanmean(LME_ano(16:121,:),2)-nanstd(LME_ano(16:121,:),0,2))')], color_patch(inum,:));
     set(fh,'FaceColor', color_patch(1,:),'FaceAlpha',0.25,'EdgeColor','none','EdgeAlpha',0.4,'Linestyle','--');
-    plot(ax,1870:2005, nanmean(LME_ano,2), '-',  'LineWidth', 2, 'LineJoin' ,'miter', 'Color',color_line(1,:)); %855-1999
+    plot(ax,1870:2005, nanmean(LME_ano,2), '-',  'LineWidth', 1.5, 'LineJoin' ,'miter', 'Color',color_line(1,:)); %855-1999
     hold on;
-    plot(ax,1870:2005, Obs-nanmean(Obs(:)), '-', 'Color',[210 210 210]./255, 'LineWidth', 2, 'LineJoin' ,'miter');  
+    plot(ax,1870:2005, Obs-nanmean(Obs), '-', 'Color',[210 210 210]./255, 'LineWidth', 1.5, 'LineJoin' ,'miter');  
     end
 
     box off; grid on;
@@ -221,4 +232,4 @@ for inum = 1:3
 end
 
 img =gcf;
-print(img, '-dtiff', '-r600', 'Figure_Nino_IOD_MME.tif');
+print(img, '-dtiff', '-r600', 'Figure_Nino_IOD_MME_v1.tif');
