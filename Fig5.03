@@ -1,0 +1,469 @@
+%% influence of variability -SLP
+load('LME_Granger_NINOTNA.mat');
+R_Nino2TNA = F21;
+P_Nino2TNA = sig21;
+R_TNA2Nino = F12;
+P_TNA2Nino = sig21;
+R_Nino2TNA(:,13) = [];
+clear F21; clear F12; clear sig21; clear sig12;
+
+load('LME_Granger_NINOIOD.mat');
+R_Nino2IOD = F21;
+P_Nino2IOD = sig21;
+R_Nino2IOD(:,13) = [];
+clear F21; clear F12; clear sig21; clear sig12;
+
+load('LME_Granger_NINOIOD.mat');
+R_Nino2IOB = F21;
+P_Nino2IOB = sig21;
+R_IOB2Nino = F12;
+P_IOB2Nino = sig12;
+R_Nino2IOB(:,13) = [];
+clear F21; clear F12; clear sig21; clear sig12;
+
+load psl_map_NAO.mat
+NAO = ts_pc_pc1; clear ts_pc_pc1; clear ts_pc_pc2;
+NAO_re = reshape(NAO,12,size(NAO,1)./12,14);
+NAO_DJF = squeeze(nanmean([NAO_re(12,1:1000-1,:);NAO_re(1:2,2:1000,:)],1));
+
+load psl_map_NPO.mat;
+ts_pc_pc2(:,3) = -1*ts_pc_pc2(:,3);
+ts_pc_pc2(:,8) = -1*ts_pc_pc2(:,8);
+ts_pc_pc2(:,10) = -1*ts_pc_pc2(:,10);
+ts_pc_pc2(:,13) = -1*ts_pc_pc2(:,13);
+NPO = ts_pc_pc2;
+NPO_re = reshape(NPO,12,size(NPO,1)./12,14);
+NPO_DJF = squeeze(nanmean([NPO_re(12,1:1000-1,:);NPO_re(1:2,2:1000,:)],1)); % end=1000;
+clear ts_pc_pc1; clear ts_pc_pc2;
+
+load psl_map_SPO.mat;
+ts_pc_pc1(:,3) = -1*ts_pc_pc1(:,3);
+ts_pc_pc1(:,6) = -1*ts_pc_pc1(:,6);
+ts_pc_pc1(:,9) = -1*ts_pc_pc1(:,9);
+ts_pc_pc1(:,12) = -1*ts_pc_pc1(:,12);
+SPO = ts_pc_pc1;
+SPO_re = reshape(SPO,12,size(SPO,1)./12,14);
+SPO_JJA = squeeze(nanmean(SPO_re(6:8,:,:),1));
+clear ts_pc_pc1; clear ts_pc_pc2;
+
+load('/Users/yingyingfeng/Downloads/Data/Paleo3bs_Project/sst_idx_850-2005_ILME_FULL_15ens.mat')
+yr = 850:2005; yr = yr';
+Nino_series = squeeze(sst_idx(1:12000,1,:)) - 273.15;
+Nino_series_re = reshape(Nino_series,12,1000,15);
+Nino_series_mean = nanmean(Nino_series_re,2);
+Nino_series_mean_rep = repmat(Nino_series_mean,1,1000,1);
+Nino_ano = Nino_series_re - Nino_series_mean_rep;
+Nino_ano(:,:,13) = [];
+Nino_DJF = squeeze(nanmean([Nino_ano(12,1:end-1,:);Nino_ano(1:2,2:end,:)],1));
+
+data_std= nan(1000,3,14);
+
+for iens = 1:14
+    Nino_cal = Nino_DJF(:,iens);
+    NAO_cal = NAO_DJF(:,iens);
+    NPO_cal = NPO_DJF(:,iens);
+    SPO_cal = SPO_JJA(:,iens);
+
+    for iwd = 6:1:994
+        clear tmp; clear tmp_re; clear tmp_re_rownmean; clear tmp_re_anomaly;
+        pd =(iwd-5)+1:(iwd+5);
+   
+        X = detrend(Nino_cal(pd,1));
+        Y = detrend(NAO_cal(pd,1));
+        x1=[ones(size(X,1),1), X];
+        [c,~,~,~,stats]  = regress(Y,x1);
+        NAO_ano_relate_nino = c(1,1)+c(2,1).*X; %重建到第2-50year
+        NAO_ano_no_nino = Y - NAO_ano_relate_nino; %第2-50yr
+
+        X = detrend(Nino_cal(pd,1));
+        Y = detrend(NPO_cal(pd,1));
+        x1=[ones(size(X,1),1), X];
+        [c,~,~,~,stats]  = regress(Y,x1);
+        NPO_ano_relate_nino = c(1,1)+c(2,1).*X; %重建到第2-50year
+        NPO_ano_no_nino = Y - NPO_ano_relate_nino; %第2-50yr
+
+        X = detrend(Nino_cal(pd,1));
+        Y = detrend(SPO_cal(pd,1));
+        x1=[ones(size(X,1),1), X];
+        [c,~,~,~,stats]  = regress(Y,x1);
+        SPO_ano_relate_nino = c(1,1)+c(2,1).*X; %重建到第2-50year
+        SPO_ano_no_nino = Y - SPO_ano_relate_nino; %第2-50yr
+
+        data_std(iwd,1,iens) = nanstd(NAO_ano_no_nino);
+        data_std(iwd,2,iens) = nanstd(NPO_ano_no_nino);
+        data_std(iwd,3,iens) = nanstd(SPO_ano_no_nino);   
+    end
+end
+
+data_std_point = nan(1156,3,15);
+Nino2TNA_point = nan(1156,15);
+Nino2IOB_point = nan(1156,15);
+
+for iens = 1:14
+    for i = 6:10:994
+        data_std_point(i,:,iens) = data_std(i,:,iens);
+        Nino2TNA_point(i,iens) = R_Nino2TNA(i,iens);
+        Nino2IOB_point(i,iens) = R_Nino2IOB(i,iens);
+    end
+end
+%%
+Nino2TNA_hi_std  = nan(1000,15,3);
+Nino2TNA_lw_std  = nan(1000,15,3);
+Nino2IOB_hi_std  = nan(1000,15,3);
+Nino2IOB_lw_std  = nan(1000,15,3);
+ 
+
+for iens = 1:14
+    for ivar = 1:3
+        data_std_ivar = data_std_point(:,ivar,iens);
+        avg = nanmean(data_std_ivar);
+        std = nanstd(data_std_ivar);
+        hi_std = find(data_std_ivar>avg+0.5*std);
+        lw_std = find(data_std_ivar<avg-0.5*std);
+        Nino2TNA_hi_std(1:length(hi_std),iens,ivar) = Nino2TNA_point(hi_std,iens);
+        Nino2IOB_hi_std(1:length(hi_std),iens,ivar) = Nino2IOB_point(hi_std,iens);
+        clear hi_std;
+        Nino2TNA_lw_std(1:length(lw_std),iens,ivar) = Nino2TNA_point(lw_std,iens);
+        Nino2IOB_lw_std(1:length(lw_std),iens,ivar) = Nino2IOB_point(lw_std,iens);
+        clear lw_std;
+        clear avg; clear std;
+    end
+end
+%%
+for ivar = 1:3
+    Nino2TNA_hi_std_ivar = Nino2TNA_hi_std(:,:,ivar);
+    Nino2TNA_lw_std_ivar = Nino2TNA_lw_std(:,:,ivar);
+    Nino2IOB_hi_std_ivar = Nino2IOB_hi_std(:,:,ivar);
+    Nino2IOB_lw_std_ivar = Nino2IOB_lw_std(:,:,ivar);
+
+    Nino2TNA_hi_std_ivar_re = reshape(Nino2TNA_hi_std_ivar,size(Nino2TNA_hi_std_ivar,1)*size(Nino2TNA_hi_std_ivar,2),1); Nino2TNA_hi_std_ivar_re(isnan(Nino2TNA_hi_std_ivar_re)) = [];
+    Nino2TNA_lw_std_ivar_re = reshape(Nino2TNA_lw_std_ivar,size(Nino2TNA_lw_std_ivar,1)*size(Nino2TNA_lw_std_ivar,2),1); Nino2TNA_lw_std_ivar_re(isnan(Nino2TNA_lw_std_ivar_re)) = [];
+    Nino2IOB_hi_std_ivar_re = reshape(Nino2IOB_hi_std_ivar,size(Nino2IOB_hi_std_ivar,1)*size(Nino2IOB_hi_std_ivar,2),1); Nino2TNA_hi_std_ivar_re(isnan(Nino2TNA_hi_std_ivar_re)) = [];
+    Nino2IOB_lw_std_ivar_re = reshape(Nino2IOB_lw_std_ivar,size(Nino2IOB_lw_std_ivar,1)*size(Nino2IOB_lw_std_ivar,2),1); Nino2TNA_hi_std_ivar_re(isnan(Nino2TNA_hi_std_ivar_re)) = [];
+
+    % [p,h] = ttest2( Nino2TNA_hi_std_ivar_re, Nino2TNA_lw_std_ivar_re  , 'Alpha',0.1);
+    % h_TNA = h
+    % p_TNA = p
+    % hi_TNA = nanmean(Nino2TNA_hi_std_ivar_re)
+    % lw_TNA = nanmean(Nino2TNA_lw_std_ivar_re)
+    [p,h] = ttest2( Nino2IOB_hi_std_ivar_re, Nino2IOB_lw_std_ivar_re  , 'Alpha',0.1);
+    h_IOB = h
+    p_IOB = p
+    hi_IOB = nanmean(Nino2IOB_hi_std_ivar_re)
+    lw_IOB = nanmean(Nino2IOB_lw_std_ivar_re)
+end
+%% 概率密度图 std NinoTNA Fn 20240920 slp
+page_width = 18;
+page_height = 18;
+figure('Units','centimeters',...
+    'position',[0 0 page_width page_height],...
+    'PaperPosition',[0 0 page_width page_height],...
+    'color',[1 1 1]);
+
+nrow=3;
+ncol=1;
+width = 0.3;
+height = 0.3;
+epsw = 0.15;
+epsh = 0.0;
+xstart=0.125;
+ystart=0.025;
+pos = zeros(nrow*ncol,4);
+for r=1:nrow
+    for c=1:ncol
+        pos((r-1)*ncol+c,1)=xstart + (c-1)*(width+epsw);
+        pos((r-1)*ncol+c,2)=1-(ystart+r*height+(r-1)*epsh);
+        pos((r-1)*ncol+c,3)=width;
+        pos((r-1)*ncol+c,4)=height;
+    end
+end
+
+color_line = [ [247 160 43]./255; [249 221 171]./255;  [96 94 111]./255; [189 186 219]./255;  [255 110 93]./255; [255 183 170]./255];
+for inum = 1:3
+
+    ax= axes('Position',pos(inum,:),'Color','none');
+    set(ax, 'ylim' , [0 12],'YTick',2:2:10,'TickDir','out', 'Color', 'none','TickDir','out', 'TickLength',[0.01/0.2, 0],'FontName','Helvetica','FontSize',12);
+
+    %
+    hold on;
+    if inum==3 || inum==4
+        set(ax, 'xlim' , [0 0.3], 'XTick',0:0.05:0.3, 'FontName','Helvetica','FontSize',12,'TickDir','out', 'TickLength',[0.005/0.2, 0],'XTickLabel',{'0','','0.1','','0.2','','0.3'});
+    else
+        set(ax, 'xlim' , [0 0.3], 'XTick',[], 'FontName','Helvetica','FontSize',12,'TickDir','out', 'TickLength',[0.005/0.2, 0],'XTickLabel',{'0','','0.1','','0.2','','0.3'});
+    end
+
+    clear data1;  clear data2; clear len; clear tmp; clear s;
+
+    Nino2TNA_hi_std_ivar = Nino2TNA_hi_std(:,:,inum);
+    Nino2TNA_lw_std_ivar = Nino2TNA_lw_std(:,:,inum);
+    Nino2TNA_hi_std_ivar_re = reshape(Nino2TNA_hi_std_ivar,size(Nino2TNA_hi_std_ivar,1)*size(Nino2TNA_hi_std_ivar,2),1); Nino2TNA_hi_std_ivar_re(isnan(Nino2TNA_hi_std_ivar_re)) = [];
+    Nino2TNA_lw_std_ivar_re = reshape(Nino2TNA_lw_std_ivar,size(Nino2TNA_lw_std_ivar,1)*size(Nino2TNA_lw_std_ivar,2),1); Nino2TNA_lw_std_ivar_re(isnan(Nino2TNA_lw_std_ivar_re)) = [];
+
+    data1 = Nino2TNA_hi_std_ivar_re;
+    data2 = Nino2TNA_lw_std_ivar_re;
+
+    x_values = 0:0.001:0.3;
+    data1_fit = fitdist(data1,'normal');
+    data1pdf = pdf(data1_fit,x_values);
+
+    data2_fit = fitdist(data2,'normal');
+    data2pdf = pdf(data2_fit,x_values);
+
+    if inum==1
+        plot(ax, x_values , data1pdf, '-', 'Color', color_line(1,:), 'LineWidth', 1.5, 'LineJoin' ,'miter');
+        hold on;
+        plot(ax, x_values , data2pdf, '-', 'Color', color_line(2,:), 'LineWidth', 1.5, 'LineJoin' ,'miter');
+    end
+
+    if inum==2
+        plot(ax, x_values , data1pdf, '-', 'Color', color_line(3,:), 'LineWidth', 1.5, 'LineJoin' ,'miter');
+        hold on;
+        plot(ax, x_values , data2pdf, '-', 'Color', color_line(4,:), 'LineWidth', 1.5, 'LineJoin' ,'miter');
+    end
+
+    if inum==3
+        plot(ax, x_values , data1pdf, '-', 'Color', color_line(5,:), 'LineWidth', 1.5, 'LineJoin' ,'miter');
+        hold on;
+        plot(ax, x_values , data2pdf, '-', 'Color', color_line(6,:), 'LineWidth', 1.5, 'LineJoin' ,'miter');
+    end
+
+       if inum==4
+        plot(ax, x_values , data1pdf, '-', 'Color', color_line(7,:), 'LineWidth', 1.5, 'LineJoin' ,'miter');
+        hold on;
+        plot(ax, x_values , data2pdf, '-', 'Color', color_line(8,:), 'LineWidth', 1.5, 'LineJoin' ,'miter');
+       end
+
+       clear data1_fit; clear data1pdf; clear data2_fit; clear data2pdf;
+
+    hold on;
+    ax=gca;
+    axes('position',ax.Position,'box','on','ytick',[],'xtick',[],'color','none');
+
+end
+%
+% img =gcf;
+% print(img, '-dtiff', '-r600', './New_psl_std_annual_variability_ENSOTNA_0.5std_mov_850_1850.tif');
+%% 概率密度图 std NinoIOB Fn 20240920 slp
+page_width = 18;
+page_height = 18;
+figure('Units','centimeters',...
+    'position',[0 0 page_width page_height],...
+    'PaperPosition',[0 0 page_width page_height],...
+    'color',[1 1 1]);
+
+nrow=2;
+ncol=3;
+width = 0.2;
+height = 0.2;
+epsw = 0.1;
+epsh = 0.125;
+xstart=0.1;
+ystart=0.025;
+pos = zeros(nrow*ncol,4);
+for r=1:nrow
+    for c=1:ncol
+        pos((r-1)*ncol+c,1)=xstart + (c-1)*(width+epsw);
+        pos((r-1)*ncol+c,2)=1-(ystart+r*height+(r-1)*epsh);
+        pos((r-1)*ncol+c,3)=width;
+        pos((r-1)*ncol+c,4)=height;
+    end
+end
+
+
+color_line = [[0 0 0]./255; [120 120 120]./255;  [160 85 49]./255; [180 136 137]./255;  [60 127 191]./255; [148 204 221]./255;  [87 113 96]./255; [168 194 113]./255];
+
+% color_line = [[160 85 49]./255; [180 136 137]./255;  [60 127 191]./255; [148 204 221]./255; [247 160 43]./255; [249 221 171]./255; [87 113 96]./255; [168 194 113]./255];
+for inum = 1:3
+
+    ax= axes('Position',pos(inum,:),'Color','none');
+    set(ax, 'ylim' , [0 20],'YTick',0:5:20,'TickDir','out', 'Color', 'none','TickDir','out', 'TickLength',[0.01/0.2, 0],'FontName','Helvetica','FontSize',12);
+
+    %
+     hold on;
+    % if inum==3 || inum==4
+      set(ax, 'xlim' , [0 0.3], 'XTick',0:0.05:0.3, 'FontName','Helvetica','FontSize',12,'TickDir','out', 'TickLength',[0.005/0.2, 0],'XTickLabel',{'0','','0.1','','0.2','','0.3'});
+    % else
+    %     set(ax, 'xlim' , [0 0.3], 'XTick',[], 'FontName','Helvetica','FontSize',12,'TickDir','out', 'TickLength',[0.005/0.2, 0],'XTickLabel',{'0','','0.1','','0.2','','0.3'});
+    % end
+
+    clear data1;  clear data2; clear len; clear tmp; clear s;
+
+    Nino2IOB_hi_std_ivar = Nino2IOB_hi_std(:,:,inum);
+    Nino2IOB_lw_std_ivar = Nino2IOB_lw_std(:,:,inum);
+    Nino2IOB_hi_std_ivar_re = reshape(Nino2IOB_hi_std_ivar,size(Nino2IOB_hi_std_ivar,1)*size(Nino2IOB_hi_std_ivar,2),1); Nino2IOB_hi_std_ivar_re(isnan(Nino2IOB_hi_std_ivar_re)) = [];
+    Nino2IOB_lw_std_ivar_re = reshape(Nino2IOB_lw_std_ivar,size(Nino2IOB_lw_std_ivar,1)*size(Nino2IOB_lw_std_ivar,2),1); Nino2IOB_lw_std_ivar_re(isnan(Nino2IOB_lw_std_ivar_re)) = [];
+
+    data1 = Nino2IOB_hi_std_ivar_re;
+    data2 = Nino2IOB_lw_std_ivar_re;
+
+    x_values = 0:0.001:0.3;
+    data1_fit = fitdist(data1,'normal');
+    data1pdf = pdf(data1_fit,x_values);
+
+    data2_fit = fitdist(data2,'normal');
+    data2pdf = pdf(data2_fit,x_values);
+
+    if inum==1
+        plot(ax, x_values , data1pdf, '-', 'Color', color_line(5,:), 'LineWidth', 1.5, 'LineJoin' ,'miter');
+        hold on;
+        plot(ax, x_values , data2pdf, '-', 'Color', color_line(6,:), 'LineWidth', 1.5, 'LineJoin' ,'miter');
+    end
+
+    if inum==2
+        plot(ax, x_values , data1pdf, '-', 'Color', color_line(5,:), 'LineWidth', 1.5, 'LineJoin' ,'miter');
+        hold on;
+        plot(ax, x_values , data2pdf, '-', 'Color', color_line(6,:), 'LineWidth', 1.5, 'LineJoin' ,'miter');
+    end
+
+    if inum==3
+        plot(ax, x_values , data1pdf, '-', 'Color', color_line(5,:), 'LineWidth', 1.5, 'LineJoin' ,'miter');
+        hold on;
+        plot(ax, x_values , data2pdf, '-', 'Color', color_line(6,:), 'LineWidth', 1.5, 'LineJoin' ,'miter');
+    end
+
+       if inum==4
+        plot(ax, x_values , data1pdf, '-', 'Color', color_line(5,:), 'LineWidth', 1.5, 'LineJoin' ,'miter');
+        hold on;
+        plot(ax, x_values , data2pdf, '-', 'Color', color_line(6,:), 'LineWidth', 1.5, 'LineJoin' ,'miter');
+       end
+
+       clear data1_fit; clear data1pdf; clear data2_fit; clear data2pdf;
+
+    hold on;
+    ax=gca;
+    axes('position',ax.Position,'box','on','ytick',[],'xtick',[],'color','none');
+
+end
+%
+img =gcf;
+print(img, '-dtiff', '-r600', './New_psl_std_annual_variability_ENSOIOD_0.5std_mov_850_1850.tif');
+%%
+data_std_point = nan(1000,3,14);
+Nino2TNA_point = nan(1000,14);
+Nino2IOB_point = nan(1000,14);
+
+for iens = 1:14
+    for i = 6:10:994
+        data_std_point(i,:,iens) = data_std(i,:,iens);
+        Nino2TNA_point(i,iens) = R_Nino2TNA(i,iens);
+        Nino2IOB_point(i,iens) = R_Nino2IOB(i,iens);
+    end
+end
+
+cal = find(~isnan(Nino2TNA_point(:,2)));
+for ivar = 1:3
+
+    data_std_point_ivar = squeeze(data_std_point(:,ivar,:));
+    for iens = 1:14
+        [r,p] = corr(data_std_point_ivar(cal,iens),Nino2TNA_point(cal,iens));
+        R_Nino2TNA_std(ivar,iens) = r;  P_Nino2TNA_std(ivar,iens) = p; clear r; clear p;
+
+        [r,p] = corr(data_std_point_ivar(cal,iens),Nino2IOB_point(cal,iens));
+        R_Nino2IOB_std(ivar,iens) = r; P_Nino2IOB_std(ivar,iens) = p; clear r; clear p;
+    end
+end
+
+R_Nino2IOB_std_mme = nanmean(R_Nino2IOB_std,2)
+P_Nino2IOB_std_mme = nanmean(P_Nino2IOB_std,2)
+
+R_Nino2TNA_std_mme = nanmean(R_Nino2TNA_std,2)
+P_Nino2TNA_std_mme = nanmean(P_Nino2TNA_std,2)
+
+ens_color = [[255 215 41]; [254 166 30]; [255 217 187]; [251 128 114]; [255 104 178]; [253 205 233]; [189 186 219];[2 139 138]; [142 210 199]; [144 188 143]; [0 100 13];  [128 127 20];[9 13 139]; [29 144 252]; [129 177 211]; ]./255;
+for ymode = 1:2
+    page_width = 18;
+    page_height = 18;
+    figure('Units','centimeters',...
+        'position',[0 0 page_width page_height],...
+        'PaperPosition',[0 0 page_width page_height],...
+        'color',[1 1 1]);
+
+    nrow=1;
+    ncol=3;
+    width = 0.2;
+    height = width;
+    epsw = 0.125;
+    epsh = 0.15;
+    xstart=0.1;
+    ystart=0.025;
+    pos = zeros(nrow*ncol,4);
+    for r=1:nrow
+        for c=1:ncol
+            pos((r-1)*ncol+c,1)=xstart + (c-1)*(width+epsw);
+            pos((r-1)*ncol+c,2)=1-(ystart+r*height+(r-1)*epsh);
+            pos((r-1)*ncol+c,3)=width;
+            pos((r-1)*ncol+c,4)=height;
+        end
+    end
+
+    Label_abc = {'a','b','c','d','e','f','g','h','i'};
+
+ 
+    for inum = 1:3
+        ax= axes('Position',pos(inum,:),'Color','none');
+        set(ax, 'TickDir','out', 'TickLength',[0.006/0.3, 0],...
+            'FontName','Helvetica','FontSize',12);
+
+        set(ax, 'ylim' , [0 0.3],'YTick',0:0.1:0.3,'TickDir','out', 'TickLength',[0.01/0.2, 0],...
+            'YTickLabel',{'0','','0.2' ,''},'FontName','Helvetica','FontSize',12);
+
+        hold on;
+        x = squeeze(data_std_point(:,inum,:));
+        if inum ==1; xlabel('NAO Std. (DJF)');end
+        if inum ==2; xlabel('NPO Std. (DJF)');end
+        if inum ==3; xlabel('SPO Std. (JJA)');end
+        
+        if ymode ==1
+            y = squeeze(Nino2TNA_point(:,:));
+            ylabel('{G}  (ENSO \rightarrow TNA)')
+        end
+
+        if ymode ==2
+            y = squeeze(Nino2IOB_point(:,:));
+            ylabel('{G}  (ENSO \rightarrow IOB)')
+        end
+
+        hold on;
+        cal_num = 6:10:994;
+        x_cal = x(cal_num,:);
+        y_cal = y(cal_num,:);
+
+        for iiens = 1:14
+            a = x_cal(:,iiens); a_avg = nanmean(a); a_std = nanstd(a);
+            a(a>a_avg+2*a_std ) = nan;
+            a(a<a_avg-2*a_std ) = nan;
+            clear a_avg; clear a_std;
+
+            b = y_cal(:,iiens); b_avg = nanmean(b); b_std = nanstd(b);
+            b(b>b_avg+2*b_std ) = nan;
+            b(b<b_avg-2*b_std ) = nan;
+            clear b_avg; clear b_std;
+
+            ens_id = find(isnan(a));
+            b(ens_id) = nan;
+            ens_iid = find(~isnan(b));
+            scatter(a(ens_iid),b(ens_iid),5,'filled','MarkerFaceColor',[148 204 221]./255,'MarkerEdgeColor',[148 204 221]./255,'MarkerFaceAlpha',0.5,'MarkerEdgeAlpha',1);
+            hold on;
+            clear ens_id; clear ens_iid;
+            box on;
+
+            A(:,iiens) = a;
+            B(:,iiens) = b;
+        end
+
+        A_re = reshape(A,size(A,1)*size(A,2),1);
+        B_re = reshape(B,size(B,1)*size(B,2),1);
+        idxxx = find(isnan(A_re));
+        B_re(idxxx,1) = nan;
+        iiiid = find(~isnan(B_re));
+        [r,p] = corr(A_re( iiiid ,1),B_re( iiiid ,1))
+    end
+     
+     box off;
+     ax=gca;
+     axes('position',ax.Position,'box','on','ytick',[],'xtick',[],'color','none')
+
+    img =gcf;
+    if  ymode==1; print(img, '-dtiff', '-r600', './LME_std_R_Nino2TNA_correlation_nonino_850_1850_slp_fn'); end
+    if  ymode==2; print(img, '-dtiff', '-r600', './LME_std_R_Nino2IOD_correlation_nonino_850_1850_slp_fn'); end
+end
