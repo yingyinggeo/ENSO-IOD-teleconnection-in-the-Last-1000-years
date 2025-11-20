@@ -1,0 +1,458 @@
+load('Granger_NINOIOD_30yr.mat');
+R_Nino2IOB = F21;
+P_Nino2IOB = sig21;
+R_IOB2Nino = F12;
+P_IOB2Nino = sig12;
+clear F21; clear F12; clear sig21; clear sig12;
+
+
+Nino2IOB_point = nan(1156,15);
+Nino2IOB_G_avg = nan(1156,15);
+
+for iens = 1:15
+    for i = 16:31:985
+        % data_std_point(i,:,iens) = data_std(i,:,iens);    
+        Nino2IOB_point(i,iens) = R_Nino2IOB(i,iens);     
+        Nino2IOB_G_avg(i,iens) = nanmean(squeeze(R_Nino2IOB(i-15:i+15,iens)));
+    end
+end
+
+hi_std_GIOB = nan(1156,15);
+lw_std_GIOB = nan(1156,15);
+
+for iens = 1:15
+    data_G_avg_Nino2IOB   = Nino2IOB_G_avg(:,iens);
+    avgIOB = nanmean(data_G_avg_Nino2IOB);
+    stdIOB = nanstd(data_G_avg_Nino2IOB);
+    a = find(data_G_avg_Nino2IOB>avgIOB+0.5*stdIOB);
+    b =  find(data_G_avg_Nino2IOB<avgIOB-0.5*stdIOB);
+    hi_std_GIOB(1:length(a),iens) = a;
+    lw_std_GIOB(1:length(b),iens) = b;
+end
+
+sst_hi_GIOB_avg = nan(96,144,12,20,15);
+sst_lw_GIOB_avg = nan(96,144,12,20,15);
+sst_hi_GIOB_std = nan(96,144,12,20,15);
+sst_lw_GIOB_std = nan(96,144,12,20,15);
+
+%%
+for iens = 1:15
+    m = squeeze(hi_std_GIOB(:,iens));
+    m_len = sum(~isnan(m));
+
+    n = squeeze(lw_std_GIOB(:,iens));
+    n_len = sum(~isnan(n));
+
+    for icount = 1:m_len
+        m_wd = m(icount)-15:m(icount)+15;
+        avg_sst = mean(ts_ano(:,:,:,m_wd,iens), 4, 'omitnan');
+        std_sst = nanstd(ts_ano(:,:,:,m_wd,iens),0,4);
+
+        sst_hi_GIOB_avg(:,:,:,icount,iens) = squeeze(avg_sst);
+        sst_hi_GIOB_std(:,:,:,icount,iens) = squeeze(std_sst);
+    end
+    clear m; clear m_len;
+
+    for icount = 1:n_len
+        n_wd = n(icount)-15:n(icount)+15;
+        avg_sst = mean(ts_ano(:,:,:,n_wd,iens), 4, 'omitnan');
+        std_sst = nanstd(ts_ano(:,:,:,n_wd,iens),0,4);
+
+        sst_lw_GIOB_avg(:,:,:,icount,iens) = squeeze(avg_sst);
+        sst_lw_GIOB_std(:,:,:,icount,iens) = squeeze(std_sst);
+    end
+    clear n; clear n_len;
+
+end
+
+%%
+clearvars -except sst_hi_GIOB_avg sst_lw_GIOB_avg sst_hi_GIOB_std sst_lw_GIOB_std lat lon;
+%%
+[nlat, nlon, nmon, nevent, nens] = size(sst_hi_GIOB_avg);
+
+[LonGrid, LatGrid] = meshgrid(lon, lat);
+
+% ================== 合并 event × ensemble 作为样本维度 ==================
+% 变成: [lat lon mon sample]，sample = nevent * nens
+hi_all = reshape(sst_hi_GIOB_avg, nlat, nlon, nmon, []);
+lw_all = reshape(sst_lw_GIOB_avg, nlat, nlon, nmon, []);
+
+% ================== 定义四个季节 ==================
+season_name  = {'SON', 'DJF', 'MAM', 'JJA'};
+season_month = {
+    [9 10 11],      % 秋 SON
+    [12 1 2]        % 冬 DJF（跨年）
+    [3 4 5],        % 春 MAM
+    [6 7 8],        % 夏 JJA
+    };
+
+% 预存所有季节的差值和 p 值
+diff_all = nan(nlat, nlon, 4);
+P_all    = nan(nlat, nlon, 4);
+
+% ================== 逐季节计算差值和 t 检验 ==================
+for ss = 1:4
+    mon_idx = season_month{ss};
+
+    % --- 1. 对每个样本做季节平均（在月份维度3上平均） ---
+    hi_seas = squeeze( mean(hi_all(:,:,mon_idx,:), 3, 'omitnan') );  % [lat lon sample]
+    lw_seas = squeeze( mean(lw_all(:,:,mon_idx,:), 3, 'omitnan') );
+
+    % --- 2. 两样本 t 检验：高 vs 低，样本维度是第3维 ---
+    [~, P] = ttest2(hi_seas, lw_seas, 'Dim', 3, 'Vartype', 'unequal');
+
+    % --- 3. 各组平均值和差值（高 - 低） ---
+    mean_hi = mean(hi_seas, 3, 'omitnan');
+    mean_lw = mean(lw_seas, 3, 'omitnan');
+    diff_mean = mean_hi - mean_lw;          % [lat lon]
+
+    diff_all(:,:,ss) = diff_mean;
+    P_all(:,:,ss)    = P;
+end
+
+
+%%
+hadisst = ncread('/Users/yingyingfeng/Downloads/Data/HadISST_sst.nc','sst');
+hadisst_per = permute(hadisst,[2,1,3]);  % 1961-1-1  1093   %2005-12-15  1632
+mask_sst_tmp = squeeze(hadisst_per(:,:,end)); clear hadisst_per;
+mask_sst_tmp(~isnan(mask_sst_tmp))=1;
+reso_lat = 1.875; reso_lon = 2.5;
+mask_sst = imresample([1 1], mask_sst_tmp,[reso_lon,reso_lat],'linear');
+mask_sst_rep = repmat(mask_sst,1,1,4);
+
+% mask_final = mask_sst_rep; mask_final(:,1:72,:) = mask_sst_rep (:,73:144,:); mask_final(:,73:144,:) = mask_sst_rep (:,1:72,:);
+diff_all(isnan(mask_sst_rep)) = nan;
+P_all(isnan(mask_sst_rep)) = nan;
+
+pattern_sst = diff_all;
+pv_sst = P_all;
+
+pattern_sst_plot = nan(96,144,4); pattern_sst_plot(:,1:72,:) = pattern_sst(:,73:144,:); pattern_sst_plot(:,73:144,:) = pattern_sst(:,1:72,:);
+% pattern_u_plot = nan(96,144,4); pattern_u_plot(:,1:72,:) = pattern_u(:,73:144,:); pattern_u_plot(:,73:144,:) = pattern_u(:,1:72,:);
+% pattern_v_plot = nan(96,144,4); pattern_v_plot(:,1:72,:) = pattern_v(:,73:144,:); pattern_v_plot(:,73:144,:) = pattern_v(:,1:72,:);
+% 
+pv_sst_plot = nan(96,144,4); pv_sst_plot(:,1:72,:) = pv_sst(:,73:144,:); pv_sst_plot(:,73:144,:) = pv_sst(:,1:72,:);
+
+reso_lat = 1.875; reso_lon = 2.5;
+lat = 90-reso_lat/2 : -reso_lat : -90+reso_lat/2;
+lon = 0+reso_lon/2:reso_lon:360-reso_lon/2;
+
+page_width = 20;
+page_height = 20;
+figure('Units','centimeters',...
+       'position',[0 0 page_width page_height],...
+       'PaperPosition',[0 0 page_width page_height],...
+       'color',[1 1 1]);
+   
+% set position of three subplots
+nrow=4;
+ncol=1;
+width = 0.375;
+height = width./3;
+epsw = 0.1;
+epsh = 0.04;
+xstart=0.1;
+ystart=0.05;
+pos = zeros(nrow*ncol,4);
+for r=1:nrow
+    for c=1:ncol
+        pos((r-1)*ncol+c,1)=xstart + (c-1)*(width+epsw);
+        pos((r-1)*ncol+c,2)=1-(ystart+r*height+(r-1)*epsh);
+        pos((r-1)*ncol+c,3)=width;
+        pos((r-1)*ncol+c,4)=height;
+    end
+end
+% Label = {'Nino3.4','TNA','IOB'};
+Label_abc = {'a', 'b', 'c','d'};
+
+load coastlines;
+
+iiid = find(coastlon<0);
+coastlon_new = coastlon;
+coastlon_new(iiid) = coastlon(iiid)+360;
+
+coastlon_new(coastlon_new>359) = nan;
+coastlon_new(coastlon_new<-359) = nan;
+coastlat(coastlat>89.5) = nan;
+coastlat(coastlat<-89.5) = nan;
+coastlat(coastlat>-0.25&coastlat<0.25) = nan;
+
+for inum = 1:4
+
+    ax= axes('Position',pos(inum,:),'Color','none');
+   
+    set(ax, 'ylim' , [-45, 45],'YTick',-30:30:30,'TickDir','out', 'TickLength',[0.005/0.3, 0],...
+        'YTickLabel',{'30S','EQ' ,'30N'},'FontName','Helvetica','FontSize',12);
+   
+
+    set(ax, 'xlim' , [0.25 359.75], 'XTick',[0:90:360],'XTickLabel',[]);
+    if inum==4
+    text(0:90:360, [-60 -60 -60 -60 -60],{'0','90E','180','90W', '0'},...
+        'FontName','Helvetica','horizontalalignment','center','FontSize',12);
+
+    end
+
+    [x,y] = meshgrid(0+5:10:360-5, 90-5:-10:-90+5);
+
+    hold on %!!!!!!!!
+    % if inum ==1
+    %     % imagesc( lon, lat, pattern_sst(:, :, inum),'alphadata',~isnan(pattern_sst(:, :, 2)));
+    %     [c,h] = contourf(lon, lat,  pattern_sst(:, :, 2), 'LevelList', [-100, -1 : 0.001 : 1, 100]);
+    %     h.LineColor = 'none';
+    % else
+    imagesc( lon, lat, pattern_sst_plot(:, :, inum),'alphadata',~isnan(pattern_sst_plot(:, :, 2)));
+    % [c,h] = contourf(lon, lat,  pattern_sst_plot(:, :, 2)-nanmean(pattern_sst_plot(36:61,:,inum),[1 2]), 'LevelList', [-100, -1 : 0.001 : 1, 100]);
+    % [c,h] = contourf(lon, lat,  pattern_sst_plot(:, :, 2)-nanmean(pattern_sst_plot(:,:,2),[1 2]), 'LevelList', [-100, -1 : 0.001 : 1, 100]);
+
+    % h.LineColor = 'none';
+    % end
+    % 
+    % u_im = imresample([2.5 1.875], squeeze(pattern_u_plot(:,:,inum)),[10,10],'linear');
+    % v_im  = imresample([2.5 1.875], squeeze(pattern_v_plot(:,:,inum)),[10,10],'linear');
+    % ncquiverref(x, y, u_im, v_im,'',0.1, 'veccol', 'k');
+    % 
+    is_sig = squeeze(pv_sst_plot(:,:,inum));
+
+    seq = 2;
+    for iilat = 1: seq : size(is_sig,1)
+        for iilon = 1: seq : size(is_sig,2)
+
+            if is_sig(iilat,iilon) < 0.05
+                % line([lon(iilon)-0.5*seq*reso_lon, lon(iilon)+0.5*seq*reso_lon], [lat(iilat)-0.5*seq*reso_lat, lat(iilat)+0.5*seq*reso_lat], ...
+                %     'linestyle','-', 'linewidth', 0.5,'color','k');
+                %
+                plot(lon(iilon), lat(iilat),  '.','color','g','markersize', 5);
+            end
+        end
+    end
+
+    load BlueDarkRed18.mat;
+    colormap (BlueDarkRed18);
+    % load ttz_color_hgt.mat
+    % ttz_color_flip = flipud(ttz_color_hgt);
+    % mycolor(1,:) = [0 38 97]./255;
+    % mycolor(2:6,:) = ttz_color_flip ([3 4 6 8 10],:);
+    % mycolor(7,:) = [1 1 1]; mycolor(8,:) = [1 1 1];
+    % mycolor(9:13,:) = ttz_color_flip([12 13 15 17 19],:);
+    % mycolor(14,:) =  [141 0 0]./255;
+    % colormap (mycolor);
+    %
+    % % worldmap('World');
+    plot(coastlon_new, coastlat,'k');
+  
+    clim([-0.09 0.09]);
+    box on;
+    grid off;
+    set(ax,'layer','top');
+    % text(0, 55, Label_abc{inum},  'FontName','Helvetica','horizontalalignment','left','FontSize',14,'FontWeight','bold');
+
+    % box on; grid on;
+    box off
+    ax=gca;
+    axes('position',ax.Position,'box','on','ytick',[],'xtick',[],'color','none')
+end
+
+cb1=colorbar(ax,'location','southoutside','position',[0.1 0.25 0.375 0.015]);
+set(cb1,'ticks', -0.05:0.05:0.05, 'ticklength', 0.005/0.3 ,'fontsize',12);
+
+cb1ax = axes('position', cb1.Position, 'visible', 'off');
+text(cb1ax, 0.5, -3.5, 'Difference in SSTA (\circ C)','Fontname','Helvetica','fontsize',12,'horizontalalignment','center' );
+
+img =gcf;
+print(img, '-dtiff', '-r600', './LME_long_term_ano_uv850_sst_high_minus_GENSOIOD_period_all_seasons.tif');
+
+
+%%
+clearvars -except sst_hi_GIOB_avg sst_lw_GIOB_avg sst_hi_GIOB_std sst_lw_GIOB_std lat lon;
+%%
+[nlat, nlon, nmon, nevent, nens] = size(sst_hi_GIOB_std);
+
+[LonGrid, LatGrid] = meshgrid(lon, lat);
+
+% ================== 合并 event × ensemble 作为样本维度 ==================
+% 变成: [lat lon mon sample]，sample = nevent * nens
+hi_all = reshape(sst_hi_GIOB_std, nlat, nlon, nmon, []);
+lw_all = reshape(sst_lw_GIOB_std, nlat, nlon, nmon, []);
+
+% ================== 定义四个季节 ==================
+season_name  = {'SON', 'DJF', 'MAM', 'JJA'};
+season_month = {
+    [9 10 11],      % 秋 SON
+    [12 1 2]        % 冬 DJF（跨年）
+    [3 4 5],        % 春 MAM
+    [6 7 8],        % 夏 JJA
+    };
+
+% 预存所有季节的差值和 p 值
+diff_all = nan(nlat, nlon, 4);
+P_all    = nan(nlat, nlon, 4);
+
+% ================== 逐季节计算差值和 t 检验 ==================
+for ss = 1:4
+    mon_idx = season_month{ss};
+
+    % --- 1. 对每个样本做季节平均（在月份维度3上平均） ---
+    hi_seas = squeeze( mean(hi_all(:,:,mon_idx,:), 3, 'omitnan') );  % [lat lon sample]
+    lw_seas = squeeze( mean(lw_all(:,:,mon_idx,:), 3, 'omitnan') );
+
+    % --- 2. 两样本 t 检验：高 vs 低，样本维度是第3维 ---
+    [~, P] = ttest2(hi_seas, lw_seas, 'Dim', 3, 'Vartype', 'unequal');
+
+    % --- 3. 各组平均值和差值（高 - 低） ---
+    mean_hi = mean(hi_seas, 3, 'omitnan');
+    mean_lw = mean(lw_seas, 3, 'omitnan');
+    diff_mean = mean_hi - mean_lw;          % [lat lon]
+
+    diff_all(:,:,ss) = diff_mean;
+    P_all(:,:,ss)    = P;
+end
+
+
+hadisst = ncread('/Users/yingyingfeng/Downloads/Data/HadISST_sst.nc','sst');
+hadisst_per = permute(hadisst,[2,1,3]);  % 1961-1-1  1093   %2005-12-15  1632
+mask_sst_tmp = squeeze(hadisst_per(:,:,end)); clear hadisst_per;
+mask_sst_tmp(~isnan(mask_sst_tmp))=1;
+reso_lat = 1.875; reso_lon = 2.5;
+mask_sst = imresample([1 1], mask_sst_tmp,[reso_lon,reso_lat],'linear');
+mask_sst_rep = repmat(mask_sst,1,1,4);
+
+% mask_final = mask_sst_rep; mask_final(:,1:72,:) = mask_sst_rep (:,73:144,:); mask_final(:,73:144,:) = mask_sst_rep (:,1:72,:);
+diff_all(isnan(mask_sst_rep)) = nan;
+P_all(isnan(mask_sst_rep)) = nan;
+
+pattern_sst = diff_all;
+pv_sst = P_all;
+
+pattern_sst_plot = nan(96,144,4); pattern_sst_plot(:,1:72,:) = pattern_sst(:,73:144,:); pattern_sst_plot(:,73:144,:) = pattern_sst(:,1:72,:);
+% pattern_u_plot = nan(96,144,4); pattern_u_plot(:,1:72,:) = pattern_u(:,73:144,:); pattern_u_plot(:,73:144,:) = pattern_u(:,1:72,:);
+% pattern_v_plot = nan(96,144,4); pattern_v_plot(:,1:72,:) = pattern_v(:,73:144,:); pattern_v_plot(:,73:144,:) = pattern_v(:,1:72,:);
+% 
+pv_sst_plot = nan(96,144,4); pv_sst_plot(:,1:72,:) = pv_sst(:,73:144,:); pv_sst_plot(:,73:144,:) = pv_sst(:,1:72,:);
+
+reso_lat = 1.875; reso_lon = 2.5;
+lat = 90-reso_lat/2 : -reso_lat : -90+reso_lat/2;
+lon = 0+reso_lon/2:reso_lon:360-reso_lon/2;
+
+page_width = 20;
+page_height = 20;
+figure('Units','centimeters',...
+       'position',[0 0 page_width page_height],...
+       'PaperPosition',[0 0 page_width page_height],...
+       'color',[1 1 1]);
+   
+% set position of three subplots
+nrow=4;
+ncol=1;
+width = 0.375;
+height = width./3;
+epsw = 0.1;
+epsh = 0.04;
+xstart=0.1;
+ystart=0.05;
+pos = zeros(nrow*ncol,4);
+for r=1:nrow
+    for c=1:ncol
+        pos((r-1)*ncol+c,1)=xstart + (c-1)*(width+epsw);
+        pos((r-1)*ncol+c,2)=1-(ystart+r*height+(r-1)*epsh);
+        pos((r-1)*ncol+c,3)=width;
+        pos((r-1)*ncol+c,4)=height;
+    end
+end
+% Label = {'Nino3.4','TNA','IOB'};
+Label_abc = {'a', 'b', 'c','d'};
+
+load coastlines;
+
+iiid = find(coastlon<0);
+coastlon_new = coastlon;
+coastlon_new(iiid) = coastlon(iiid)+360;
+
+coastlon_new(coastlon_new>359) = nan;
+coastlon_new(coastlon_new<-359) = nan;
+coastlat(coastlat>89.5) = nan;
+coastlat(coastlat<-89.5) = nan;
+coastlat(coastlat>-0.25&coastlat<0.25) = nan;
+
+for inum = 1:4
+
+    ax= axes('Position',pos(inum,:),'Color','none');
+   
+    set(ax, 'ylim' , [-45, 45],'YTick',-30:30:30,'TickDir','out', 'TickLength',[0.005/0.3, 0],...
+        'YTickLabel',{'30S','EQ' ,'30N'},'FontName','Helvetica','FontSize',12);
+   
+
+    set(ax, 'xlim' , [0.25 359.75], 'XTick',[0:90:360],'XTickLabel',[]);
+    if inum==4
+    text(0:90:360, [-60 -60 -60 -60 -60],{'0','90E','180','90W', '0'},...
+        'FontName','Helvetica','horizontalalignment','center','FontSize',12);
+
+    end
+
+    [x,y] = meshgrid(0+5:10:360-5, 90-5:-10:-90+5);
+
+    hold on %!!!!!!!!
+    % if inum ==1
+    %     % imagesc( lon, lat, pattern_sst(:, :, inum),'alphadata',~isnan(pattern_sst(:, :, 2)));
+    %     [c,h] = contourf(lon, lat,  pattern_sst(:, :, 2), 'LevelList', [-100, -1 : 0.001 : 1, 100]);
+    %     h.LineColor = 'none';
+    % else
+    imagesc( lon, lat, pattern_sst_plot(:, :, inum),'alphadata',~isnan(pattern_sst_plot(:, :, 2)));
+    % [c,h] = contourf(lon, lat,  pattern_sst_plot(:, :, 2)-nanmean(pattern_sst_plot(36:61,:,inum),[1 2]), 'LevelList', [-100, -1 : 0.001 : 1, 100]);
+    % [c,h] = contourf(lon, lat,  pattern_sst_plot(:, :, 2)-nanmean(pattern_sst_plot(:,:,2),[1 2]), 'LevelList', [-100, -1 : 0.001 : 1, 100]);
+
+    % h.LineColor = 'none';
+    % end
+    % 
+    % u_im = imresample([2.5 1.875], squeeze(pattern_u_plot(:,:,inum)),[10,10],'linear');
+    % v_im  = imresample([2.5 1.875], squeeze(pattern_v_plot(:,:,inum)),[10,10],'linear');
+    % ncquiverref(x, y, u_im, v_im,'',0.1, 'veccol', 'k');
+    % 
+    is_sig = squeeze(pv_sst_plot(:,:,inum));
+
+    seq = 2;
+    for iilat = 1: seq : size(is_sig,1)
+        for iilon = 1: seq : size(is_sig,2)
+
+            if is_sig(iilat,iilon) < 0.05
+                % line([lon(iilon)-0.5*seq*reso_lon, lon(iilon)+0.5*seq*reso_lon], [lat(iilat)-0.5*seq*reso_lat, lat(iilat)+0.5*seq*reso_lat], ...
+                %     'linestyle','-', 'linewidth', 0.5,'color','k');
+                %
+                plot(lon(iilon), lat(iilat),  '.','color','g','markersize', 5);
+            end
+        end
+    end
+
+    load BlueDarkRed18.mat;
+    colormap (BlueDarkRed18);
+    % load ttz_color_hgt.mat
+    % ttz_color_flip = flipud(ttz_color_hgt);
+    % mycolor(1,:) = [0 38 97]./255;
+    % mycolor(2:6,:) = ttz_color_flip ([3 4 6 8 10],:);
+    % mycolor(7,:) = [1 1 1]; mycolor(8,:) = [1 1 1];
+    % mycolor(9:13,:) = ttz_color_flip([12 13 15 17 19],:);
+    % mycolor(14,:) =  [141 0 0]./255;
+    % colormap (mycolor);
+    %
+    % % worldmap('World');
+    plot(coastlon_new, coastlat,'k');
+  
+     clim([-0.09 0.09]);
+    box on;
+    grid off;
+    set(ax,'layer','top');
+    % text(0, 55, Label_abc{inum},  'FontName','Helvetica','horizontalalignment','left','FontSize',14,'FontWeight','bold');
+
+    % box on; grid on;
+    box off
+    ax=gca;
+    axes('position',ax.Position,'box','on','ytick',[],'xtick',[],'color','none')
+end
+
+cb1=colorbar(ax,'location','southoutside','position',[0.1 0.25 0.375 0.015]);
+set(cb1,'ticks', -0.05:0.05:0.05, 'ticklength', 0.005/0.3 ,'fontsize',12);
+
+cb1ax = axes('position', cb1.Position, 'visible', 'off');
+text(cb1ax, 0.5, -3.5, 'Difference in SSTA STD','Fontname','Helvetica','fontsize',12,'horizontalalignment','center' );
+
+img =gcf;
+print(img, '-dtiff', '-r600', './LME_long_term_ano_uv850_sst_high_minus_GENSOIOD_period_std_all_seasons.tif');
